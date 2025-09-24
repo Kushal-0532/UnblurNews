@@ -1,16 +1,16 @@
 services:
   postgres:
     image: postgres:17
-    container_name: my_postgres
+    container_name: postgres_db
     restart: always
     environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: mydb
+      POSTGRES_USER: Admin
+      POSTGRES_PASSWORD: password123    # this is for testing purposes, will remove it later
+      POSTGRES_DB: unblurDB
     ports:
       - "5353:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - /home/kushal/postgres_data/unblur:/var/lib/postgresql/data
 
 volumes:
   postgres_data:
@@ -23,5 +23,6 @@ volumes:
 # docker-compose down
 
 # to connect to the database, use:
-# docker exec -it my_postgres psql -U myuser -d mydb
+# docker exec -it postgres_db psql -U Admin -d unblurDB
+# then enter the password: password123
 
