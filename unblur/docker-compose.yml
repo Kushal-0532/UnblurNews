@@ -1,0 +1,40 @@
+# ── UnBlur — docker-compose ───────────────────────────────────────
+#
+# Usage:
+#   docker compose up --build        # first run
+#   docker compose up -d             # detached
+#   docker compose logs -f api       # follow logs
+#   docker compose down              # stop
+
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unblur-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Model weights persisted outside the container so you can
+      # swap them without rebuilding the image.
+      - ./backend/models:/app/backend/models:ro
+      # SQLite databases written here survive container restarts.
+      - ./cache:/app/cache
+    env_file:
+      - .env
+    environment:
+      # Override defaults explicitly so they resolve correctly inside
+      # the container's /app working directory.
+      - MODEL_PATH=/app/backend/models
+      - CACHE_DB=/app/cache/unblur.db
+      - METRICS_DB=/app/cache/unblur_metrics.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

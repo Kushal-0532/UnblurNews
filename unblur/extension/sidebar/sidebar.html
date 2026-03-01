@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UnBlur</title>
+  <link rel="stylesheet" href="sidebar.css" />
+</head>
+<body>
+  <!-- ── HEADER ──────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <span class="logo-icon">🔍</span>
+      <span class="logo-text">UnBlur</span>
+    </div>
+    <button id="btn-close" class="btn-close" title="Close sidebar">✕</button>
+  </header>
+
+  <!-- ── LOADING OVERLAY ─────────────────────────────────── -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+    <p>Analyzing article…</p>
+  </div>
+
+  <!-- ── ERROR PANEL ─────────────────────────────────────── -->
+  <div id="error-panel" class="error-panel hidden">
+    <p id="error-message">Something went wrong.</p>
+    <button id="btn-retry" class="btn-retry">↺ Retry</button>
+  </div>
+
+  <!-- ── MAIN CONTENT ────────────────────────────────────── -->
+  <main id="main-content" class="hidden">
+
+    <!-- CLICKBAIT SCORE -->
+    <section class="card">
+      <h2 class="section-title">CLICKBAIT SCORE</h2>
+      <div class="clickbait-bar-container">
+        <div id="clickbait-bar" class="clickbait-bar"></div>
+      </div>
+      <div class="clickbait-label">
+        <span id="clickbait-pct-label">—</span>
+        <span id="clickbait-verdict" class="clickbait-verdict"></span>
+      </div>
+    </section>
+
+    <!-- BIAS MAP -->
+    <section class="card">
+      <h2 class="section-title">BIAS MAP</h2>
+      <div class="chart-wrapper">
+        <canvas id="bias-chart"></canvas>
+      </div>
+    </section>
+
+    <!-- CASE DIAGNOSIS -->
+    <section class="card case-card" id="case-card">
+      <div class="case-icon" id="case-icon"></div>
+      <div class="case-text">
+        <div class="case-title" id="case-title">—</div>
+        <div class="case-desc" id="case-desc">—</div>
+      </div>
+    </section>
+
+    <!-- SUMMARY -->
+    <section class="card summary-card">
+      <p class="summary-stat" id="summary-stat">—</p>
+      <p class="summary-body" id="summary-body">—</p>
+      <div class="opposing-links" id="opposing-links"></div>
+    </section>
+
+  </main>
+
+  <script src="chart.umd.min.js"></script>
+  <script src="sidebar.js"></script>
+</body>
+</html>
