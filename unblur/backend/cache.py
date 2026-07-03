@@ -17,6 +17,8 @@ import time
 from contextlib import contextmanager
 from typing import Optional
 
+import redis
+
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CACHE_DB = os.getenv(
     "CACHE_DB",
@@ -179,10 +181,70 @@ class ArticleCache:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  RedisArticleCache
+# ═══════════════════════════════════════════════════════════════
+
+class RedisArticleCache:
+    """
+    Redis-backed cache for analyzed articles and related-article batches.
+
+    Same interface as ArticleCache (SQLite): get_analysis/set_analysis/
+    get_related/set_related, same 24h TTL, same key scheme (sha256 of
+    url/topic). Redis's native EX/SETEX handles expiry — no manual purge.
+
+    Usage
+    -----
+    cache = RedisArticleCache("redis://localhost:6379/0")
+    cache = RedisArticleCache("rediss://default:pw@host:6379")   # Upstash TLS
+    """
+
+    def __init__(self, redis_url: str):
+        self._client = redis.Redis.from_url(redis_url, decode_responses=True)
+
+    # ── Article analysis cache ───────────────────────────────────
+    def get_analysis(self, url: str) -> Optional[dict]:
+        """Return cached analysis for url, or None if absent/expired."""
+        raw = self._client.get(f"analysis:{_hash(url)}")
+        if raw is None:
+            return None
+        data = json.loads(raw)
+        return {
+            "clickbait_pct":   data.get("clickbait_pct"),
+            "political_score": data.get("political_score"),
+            "sentiment_score": data.get("sentiment_score"),
+            "case":            data.get("case", ""),
+            "cached":          True,
+        }
+
+    def set_analysis(self, url: str, data: dict) -> None:
+        """Store analysis result for url."""
+        payload = {
+            "clickbait_pct":   data.get("clickbait_pct"),
+            "political_score": data.get("political_score"),
+            "sentiment_score": data.get("sentiment_score"),
+            "case":            data.get("case", ""),
+        }
+        self._client.set(f"analysis:{_hash(url)}", json.dumps(payload), ex=TTL_SECONDS)
+
+    # ── Related articles cache ───────────────────────────────────
+    def get_related(self, topic: str) -> Optional[dict]:
+        """Return cached related-articles payload, or None if absent/expired."""
+        raw = self._client.get(f"related:{_hash(topic)}")
+        if raw is None:
+            return None
+        return json.loads(raw)
+
+    def set_related(self, topic: str, data: dict) -> None:
+        """Store related-articles payload for topic."""
+        self._client.set(f"related:{_hash(topic)}", json.dumps(data), ex=TTL_SECONDS)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Smoke test
 # ═══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    import sys
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -213,4 +275,35 @@ if __name__ == "__main__":
         assert cache.get_analysis("https://notcached.com") is None
         print("✓ cache miss returns None")
 
-    print("\n✓ All cache tests passed.")
+    print("\n✓ All ArticleCache (SQLite) tests passed.")
+
+    # ── RedisArticleCache smoke test (requires REDIS_URL) ────────
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        print("\nREDIS_URL not set — skipping RedisArticleCache smoke test.")
+        sys.exit(0)
+
+    rcache = RedisArticleCache(redis_url)
+
+    r_url  = "https://example.com/article/redis-123"
+    r_data = {"clickbait_pct": 42.0, "political_score": 0.2,
+              "sentiment_score": 0.1, "case": "balanced", "title": "Redis Test"}
+    rcache.set_analysis(r_url, r_data)
+    r_result = rcache.get_analysis(r_url)
+    assert r_result is not None
+    assert r_result["clickbait_pct"] == 42.0
+    assert r_result["cached"] is True
+    print("✓ [Redis] article_analyses round-trip passed")
+
+    r_topic   = "immigration policy"
+    r_related = {"articles": [{"title": "Test"}], "summary": "s", "dominant_leaning": "right", "dominant_pct": 55.0}
+    rcache.set_related(r_topic, r_related)
+    r_result2 = rcache.get_related(r_topic)
+    assert r_result2 is not None
+    assert r_result2["dominant_leaning"] == "right"
+    print("✓ [Redis] related_articles round-trip passed")
+
+    assert rcache.get_analysis("https://notcached-redis.com") is None
+    print("✓ [Redis] cache miss returns None")
+
+    print("\n✓ All RedisArticleCache tests passed.")
