@@ -50,3 +50,8 @@ unblur/backend/models/
 # Databases / cache
 *.db
 unblur/cache/
+
+# Private/local — specs, agent config, load-test results
+specs/
+.claude/
+testbench/results/
