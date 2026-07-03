@@ -27,11 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ── Install Python dependencies (cache-friendly layer) ───────────
-COPY backend/requirements.txt ./requirements.txt
+COPY unblur/backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Copy application source ───────────────────────────────────────
-COPY backend/ ./backend/
+COPY unblur/backend/ ./backend/
 
 # ── Persistent directories (mounted as volumes in compose) ────────
 RUN mkdir -p cache backend/models
@@ -50,7 +50,8 @@ EXPOSE 8000
 # Use --workers N only if you add a shared cache (Redis) and model
 # serving layer (TorchServe / Triton).
 #
-# Shell form (not exec-form array) so $PORT expands at runtime — Render
-# injects a dynamic $PORT and expects the service to bind to it; falls
-# back to 8000 for local/compose use where $PORT isn't set.
+# HF Spaces doesn't inject a $PORT env var — it just routes to the fixed
+# app_port declared in README.md's frontmatter (8000 here). Shell form
+# keeps the ${PORT:-8000} fallback anyway: harmless, and lets local
+# docker-compose use still override the port via env if ever needed.
 CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
