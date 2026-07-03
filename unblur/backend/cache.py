@@ -240,6 +240,18 @@ class RedisArticleCache:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Backend selection
+# ═══════════════════════════════════════════════════════════════
+
+def get_cache():
+    """Return RedisArticleCache if REDIS_URL is set, else ArticleCache (SQLite)."""
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        return RedisArticleCache(redis_url)
+    return ArticleCache()
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Smoke test
 # ═══════════════════════════════════════════════════════════════
 

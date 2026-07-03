@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from analyzer     import UnBlurAnalyzer
-from cache        import ArticleCache
+from cache        import RedisArticleCache, get_cache
 from case_logic   import determine_case, dominant_leaning
 from metrics      import MetricsStore
 from news_fetcher import fetch_related, extract_keywords
@@ -48,7 +48,7 @@ app.add_middleware(
 
 # ── Singletons (initialised at startup) ──────────────────────────
 analyzer: UnBlurAnalyzer = None
-cache:    ArticleCache   = None
+cache                    = None
 metrics:  MetricsStore   = None
 _start_time: float       = 0.0
 
@@ -58,7 +58,7 @@ async def startup():
     global analyzer, cache, metrics, _start_time
     _start_time = time.time()
     analyzer = UnBlurAnalyzer.get_instance()
-    cache    = ArticleCache()
+    cache    = get_cache()
     metrics  = MetricsStore()
     print(f"[startup] model_loaded={analyzer.model_loaded}")
 
@@ -284,20 +284,24 @@ async def health():
     """
     uptime_s = round(time.time() - _start_time, 1) if _start_time else 0
 
-    # Quick cache size estimate
+    is_redis = isinstance(cache, RedisArticleCache)
+
+    # Quick cache size estimate (SQLite only — Redis size isn't tracked here)
     cache_size = 0
-    try:
-        db_path = cache._db if cache else None
-        if db_path and os.path.exists(db_path):
-            cache_size = os.path.getsize(db_path)
-    except Exception:
-        pass
+    if not is_redis:
+        try:
+            db_path = cache._db if cache else None
+            if db_path and os.path.exists(db_path):
+                cache_size = os.path.getsize(db_path)
+        except Exception:
+            pass
 
     return {
         "status":       "ok",
         "model_loaded": analyzer.model_loaded if analyzer else False,
         "model_error":  analyzer._load_error  if analyzer and not analyzer.model_loaded else None,
         "uptime_s":     uptime_s,
+        "cache_backend": "redis" if is_redis else "sqlite",
         "cache_db_bytes": cache_size,
     }
 
