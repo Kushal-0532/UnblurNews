@@ -49,4 +49,8 @@ EXPOSE 8000
 # multi-process would duplicate the ~900 MB footprint per worker.
 # Use --workers N only if you add a shared cache (Redis) and model
 # serving layer (TorchServe / Triton).
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+#
+# Shell form (not exec-form array) so $PORT expands at runtime — Render
+# injects a dynamic $PORT and expects the service to bind to it; falls
+# back to 8000 for local/compose use where $PORT isn't set.
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
