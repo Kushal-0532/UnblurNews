@@ -27,6 +27,10 @@ from transformers import AutoModel, AutoTokenizer
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MODEL_PATH = os.path.join(_BACKEND_DIR, "models")
 
+# ── Hugging Face Hub model source (optional) ─────────────────────
+MODEL_REPO_ID = os.getenv("MODEL_REPO_ID")
+HF_TOKEN      = os.getenv("HF_TOKEN")
+
 
 # ═══════════════════════════════════════════════════════════════
 #  INTERNAL MODEL DEFINITION  (inference-only, no training utils)
@@ -127,6 +131,11 @@ class UnBlurAnalyzer:
           2. Full training checkpoint  (produced by model/train_*.py)
                models/model_full.pt  →  {"model_state_dict": ..., "config": ...}
         """
+        if MODEL_REPO_ID:
+            from huggingface_hub import snapshot_download
+            print(f"[UnBlurAnalyzer] Downloading model from HF Hub repo {MODEL_REPO_ID} ...")
+            self._model_path = snapshot_download(repo_id=MODEL_REPO_ID, token=HF_TOKEN)
+
         if not os.path.isdir(self._model_path):
             raise FileNotFoundError(
                 f"Model directory not found: {self._model_path}\n"
