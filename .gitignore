@@ -45,11 +45,11 @@ Thumbs.db
 # Model weights & checkpoints (too large for git)
 *.pt
 *.safetensors
-unblur/backend/models/
+backend/models/
 
 # Databases / cache
 *.db
-unblur/cache/
+cache/
 
 # Private/local — specs, agent config, load-test results
 specs/

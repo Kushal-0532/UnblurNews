@@ -27,11 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ── Install Python dependencies (cache-friendly layer) ───────────
-COPY unblur/backend/requirements.txt ./requirements.txt
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Copy application source ───────────────────────────────────────
-COPY unblur/backend/ ./backend/
+COPY backend/ ./backend/
 
 # ── Persistent directories (mounted as volumes in compose) ────────
 RUN mkdir -p cache backend/models

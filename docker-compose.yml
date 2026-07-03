@@ -11,7 +11,7 @@ version: "3.9"
 services:
   api:
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile
     container_name: unblur-api
     ports:

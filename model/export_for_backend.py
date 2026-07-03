@@ -84,7 +84,7 @@ def export(checkpoint_path: str, output_dir: str) -> None:
 
     print("\n✓ Export complete.")
     print(f"\nPlace the contents of '{output_dir}' at:")
-    print("  unblur/backend/models/")
+    print("  backend/models/")
 
 
 if __name__ == "__main__":
@@ -97,8 +97,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out",
         default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             "unblur", "backend", "models"),
-        help="Output directory (default: unblur/backend/models/)"
+                             "backend", "models"),
+        help="Output directory (default: backend/models/)"
     )
     args = parser.parse_args()
     export(args.checkpoint, args.out)
