@@ -1,10 +1,3 @@
----
-title: UnBlur API
-sdk: docker
-app_port: 8000
-pinned: false
----
-
 # UnBlur: Real-Time Media Bias and Echo Chamber Detector
 
 UnBlur is a browser extension backed by a fine-tuned NLP model. It reads a news article, scores it for clickbait, political leaning, and sentiment, then pulls related coverage from across the political spectrum and shows you where each version of the story sits. The goal is to make an echo chamber visible while you're still in it.
