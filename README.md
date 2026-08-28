@@ -12,6 +12,8 @@ pinned: false
 
 UnBlur is a browser extension backed by a fine-tuned NLP model that analyzes any news article for clickbait, political leaning, and sentiment — then shows you how the same story is covered across the political spectrum, so you can spot echo chambers before they form.
 
+**Live API:** https://kushal0532-unblur.hf.space ([health](https://kushal0532-unblur.hf.space/health)) — hosted on Hugging Face Spaces (Docker SDK), Redis cache (Upstash), model loaded from a private HF Hub repo. The extension ships pointed at this URL by default; see [Environment Variables](#environment-variables) to run against a local backend instead.
+
 ---
 
 ## Table of Contents
@@ -66,13 +68,15 @@ When you click the UnBlur icon on any news article, the extension:
 │                                      │  • Case diagnosis   │   │
 │                                      └────────┬────────────┘   │
 └───────────────────────────────────────────────┼────────────────┘
-                                                │ HTTP (localhost)
+                                                │ HTTPS (HF Space,
+                                                │  or local :8000)
                          ┌──────────────────────▼────────────────┐
-                         │  FastAPI Backend (uvicorn)             │
+                         │  FastAPI Backend (uvicorn, on Spaces)  │
                          │                                        │
                          │  POST /analyze                         │
                          │    ┌──────────────┐                    │
-                         │    │ ArticleCache │◄── SQLite 24h TTL  │
+                         │    │ ArticleCache │◄── Redis 24h TTL,  │
+                         │    │  (get_cache) │    SQLite fallback │
                          │    └──────┬───────┘                    │
                          │           │ MISS                       │
                          │    ┌──────▼───────┐                    │
@@ -258,11 +262,11 @@ For a single-instance service, SQLite is zero-dependency, zero-config, and the d
 
 ## Infrastructure & Optimization Decisions
 
-### 1. SQLite 24-hour Cache
+### 1. Redis Cache (SQLite fallback), 24-hour TTL
 
-**What:** Every `/analyze` result is stored keyed by URL hash (SHA-256). Every `/related` result is stored keyed by `{topic}|{political_score}|{sentiment_score}`.
+**What:** Every `/analyze` result is stored keyed by URL hash (SHA-256). Every `/related` result is stored keyed by `{topic}|{political_score}|{sentiment_score}`. `cache.get_cache()` returns `RedisArticleCache` if `REDIS_URL` is set (production, Upstash), otherwise `ArticleCache` (SQLite, local dev) — same interface, same TTL, same key scheme.
 
-**Why:** The most expensive operation is running `ModernBERT` inference for 10+ articles in `/related`. For popular articles (e.g. a breaking news story), the first user pays ~2 seconds; every subsequent user pays ~5 ms. At typical single-user extension usage this hits a 60–70% cache hit rate within a few hours.
+**Why:** The most expensive operation is running `ModernBERT` inference for 10+ articles in `/related`. For popular articles (e.g. a breaking news story), the first user pays ~2 seconds; every subsequent user pays ~5 ms. Redis gives shared cache across HF Space restarts/replicas; SQLite is zero-dependency for local single-instance dev.
 
 **Trade-off:** 24h TTL means stale coverage data for very long-lived stories. Tunable via `TTL_SECONDS` in `cache.py`.
 
@@ -324,19 +328,24 @@ For a single-instance service, SQLite is zero-dependency, zero-config, and the d
 
 ## Project Structure
 
+Repo root doubles as the Hugging Face Space (this README's YAML frontmatter is the Space card; `Dockerfile` at root is what Spaces builds).
+
 ```
-UnBlur/
+.
 ├── backend/
 │   ├── main.py           FastAPI app — endpoints, timing middleware
-│   ├── analyzer.py       UnBlurAnalyzer singleton (ModernBERT multi-task)
-│   ├── cache.py          SQLite 24-hour response cache
+│   ├── analyzer.py       UnBlurAnalyzer singleton (ModernBERT multi-task);
+│   │                       loads from MODEL_REPO_ID (HF Hub) or local MODEL_PATH
+│   ├── cache.py          get_cache() → RedisArticleCache (if REDIS_URL set)
+│   │                       or ArticleCache (SQLite fallback), 24h TTL
 │   ├── metrics.py        SQLite request/prediction metrics store
 │   ├── evaluate.py       Offline model evaluation harness (30 labelled examples)
 │   ├── case_logic.py     Deterministic echo-chamber case classifier
 │   ├── news_fetcher.py   Google News RSS + NewsAPI fallback + relevance filter
 │   ├── summarizer.py     GPT-3.5 summary + extractive fallback
 │   ├── requirements.txt
-│   └── models/           ← place fine-tuned model files here
+│   └── models/           ← place fine-tuned model files here (local dev only;
+│                            unused when MODEL_REPO_ID is set)
 │       ├── config.json
 │       ├── model.safetensors
 │       ├── tokenizer.json
@@ -349,21 +358,28 @@ UnBlur/
 │   ├── options.html      Backend URL settings page
 │   └── sidebar/
 │       ├── sidebar.html  Sidebar UI (420px iframe)
-│       ├── sidebar.js    API calls + Chart.js rendering
-│       ├── sidebar.css   Dark theme
+│       ├── sidebar.js    API calls + Chart.js rendering; BACKEND_URL defaults
+│       │                   to the live HF Space, overridable via options page
+│       ├── sidebar.css   Dark neomorphic theme (Manrope / JetBrains Mono)
 │       └── chart.umd.min.js  Bundled Chart.js (MV3 CSP requires local)
 │
-├── cache/                SQLite databases (created automatically)
+├── testbench/            Load-testing harness (simulated users, concurrency
+│                           sweeps, latency/cache-hit charts) — see
+│                           specs/testbench/SPEC.md
+│
+├── cache/                SQLite databases (created automatically, local dev
+│   │                       fallback only — production uses Redis)
 │   ├── unblur.db         Response cache (24h TTL)
 │   └── unblur_metrics.db Request metrics (7-day raw, then aggregated)
 │
-├── Dockerfile            Production container (python:3.11-slim, non-root)
+├── Dockerfile            Production container (python:3.11-slim, non-root),
+│                           builds from repo root for HF Spaces Docker SDK
 ├── docker-compose.yml    Compose with volume mounts + healthcheck
 ├── .env.example          Environment variable template
 └── evaluation_results.json  Last evaluation run output (git-tracked)
 ```
 
-Model training lives one level up at `../model/`:
+Model training lives at `model/`:
 ```
 model/
 ├── UnblurNews_Training.ipynb   Google Colab training notebook
@@ -380,7 +396,7 @@ model/
 ### Option A — Local (venv)
 
 ```bash
-cd UnBlur
+# From repo root
 
 # Create virtual environment
 python3 -m venv venv
@@ -393,8 +409,12 @@ pip install -r backend/requirements.txt
 cp .env.example .env
 # Edit .env — set NEWSAPI_KEY (free at https://newsapi.org)
 #              optionally set OPENAI_API_KEY for GPT-3.5 summaries
+#              optionally set REDIS_URL (else falls back to SQLite)
+#              optionally set MODEL_REPO_ID + HF_TOKEN to pull the model from
+#              a private HF Hub repo instead of local files
 
-# Place model files in backend/models/ (see "Getting Model Files" below)
+# Place model files in backend/models/ (see "Getting Model Files" below) —
+# skip this if MODEL_REPO_ID is set
 
 # Start the server
 uvicorn backend.main:app --reload --port 8000
@@ -403,12 +423,19 @@ uvicorn backend.main:app --reload --port 8000
 ### Option B — Docker
 
 ```bash
-cd UnBlur
+# From repo root
 cp .env.example .env   # fill in keys
 
 docker compose up --build
 # API available at http://localhost:8000
 ```
+
+### Option C — Hugging Face Spaces (production)
+
+The repo root is a Docker-SDK HF Space (this README's frontmatter is the Space card, root `Dockerfile` is what it builds). To deploy your own:
+1. Push this repo to a new HF Space (Docker SDK, matching `app_port: 8000` above)
+2. Set secrets in the Space's **Settings → Repository secrets**: `REDIS_URL`, `MODEL_REPO_ID` + `HF_TOKEN` (or bake model files into the image), `NEWSAPI_KEY`, `OPENAI_API_KEY`
+3. Spaces builds and starts the container automatically on push; check `/health` once live
 
 ### Getting Model Files
 
@@ -527,9 +554,12 @@ Liveness + readiness probe.
   "model_loaded": true,
   "model_error": null,
   "uptime_s": 3612.4,
-  "cache_db_bytes": 245760
+  "cache_backend": "redis",
+  "cache_db_bytes": 0
 }
 ```
+
+`cache_backend` is `"redis"` when `REDIS_URL` is set, else `"sqlite"` (in which case `cache_db_bytes` reports the SQLite file size — always `0` for Redis, size isn't tracked there).
 
 ---
 
@@ -540,7 +570,7 @@ Liveness + readiness probe.
 3. The sidebar slides in from the right (article content shifts left)
 4. Results appear in ~1–3 seconds (< 100 ms on cache hit)
 
-**Settings:** Right-click the icon → **Options** to set a custom backend URL (useful when running on a remote server or different port).
+**Settings:** Right-click the icon → **Options** to set a custom backend URL. Ships pointed at the live HF Space (`https://kushal0532-unblur.hf.space`) — point it at `http://localhost:8000` here if running the backend locally.
 
 ---
 
@@ -550,8 +580,11 @@ Liveness + readiness probe.
 |----------|----------|---------|-------------|
 | `NEWSAPI_KEY` | No* | — | NewsAPI key (newsapi.org). Falls back to Google News RSS if unset. |
 | `OPENAI_API_KEY` | No | — | Enables GPT-3.5 summaries. Falls back to extractive summary. |
-| `MODEL_PATH` | No | `./backend/models` | Path to model directory |
-| `CACHE_DB` | No | `./cache/unblur.db` | SQLite cache database path |
+| `MODEL_PATH` | No | `./backend/models` | Local model directory. Ignored if `MODEL_REPO_ID` is set. |
+| `MODEL_REPO_ID` | No | — | Private HF Hub repo id (e.g. `you/unblur-model`) to download the model from at startup, instead of `MODEL_PATH`. |
+| `HF_TOKEN` | Only with `MODEL_REPO_ID` on a private repo | — | Hugging Face access token for downloading the model. |
+| `REDIS_URL` | No | — | Redis/Upstash connection URL (`rediss://` for TLS). If unset, falls back to the SQLite cache. |
+| `CACHE_DB` | No | `./cache/unblur.db` | SQLite cache database path (used only when `REDIS_URL` is unset). |
 | `METRICS_DB` | No | `./cache/unblur_metrics.db` | SQLite metrics database path |
 | `PORT` | No | `8000` | Server port |
 
@@ -566,10 +599,11 @@ Liveness + readiness probe.
 | Model backbone | ModernBERT-base | Faster CPU inference than BERT/RoBERTa, efficient attention |
 | Multi-task heads | PyTorch `nn.Sequential` | Minimal, auditable; no framework lock-in |
 | API server | FastAPI + uvicorn | Async, auto-generated OpenAPI docs, Pydantic validation |
-| Caching | SQLite (stdlib) | Zero dependencies; sufficient for single-instance |
+| Caching | Redis (Upstash), SQLite fallback | Shared cache across Space restarts in prod; zero-dependency fallback for local dev |
 | Metrics | SQLite WAL mode | Concurrent reads without blocking writes |
-| Containerisation | Docker + Compose | Reproducible environment; model weights mounted as volumes |
+| Containerisation | Docker + Compose, deployed to HF Spaces (Docker SDK) | Reproducible environment; model weights mounted as volumes locally, pulled from HF Hub in prod |
 | Extension | Vanilla JS + Manifest V3 | No build step; Chart.js bundled locally (MV3 CSP compliance) |
+| Extension UI | Manrope + JetBrains Mono, dark neomorphic | Imported from a Claude Design mock, hand-ported into the existing sidebar.css/js (no framework) |
 | Charts | Chart.js (scatter) | Lightweight, no React/Vue dependency |
 | Summaries | OpenAI GPT-3.5 | Best quality; extractive fallback for offline use |
 | News search | Google News RSS | Free, no API key, topic-specific (not generic top-news) |

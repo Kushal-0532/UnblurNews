@@ -9,7 +9,7 @@
 "use strict";
 
 // ── Config (read from chrome.storage.sync, fallback to default) ─
-let BACKEND_URL = "http://localhost:8000";
+let BACKEND_URL = "https://kushal0532-unblur.hf.space";
 
 // Load persisted backend URL from extension storage
 if (typeof chrome !== "undefined" && chrome.storage) {
@@ -166,26 +166,26 @@ function renderChart(currentArticle, relatedArticles) {
       scales: {
         x: {
           min: -1.1, max: 1.1,
-          grid: { color: "rgba(255,255,255,0.07)" },
-          ticks: { color: "#8892a4", font: { size: 9 }, maxTicksLimit: 5 },
-          border: { color: "rgba(255,255,255,0.15)" },
+          grid: { color: "rgba(255,255,255,0.06)" },
+          ticks: { color: "#6b7180", font: { size: 9 }, maxTicksLimit: 5 },
+          border: { color: "rgba(255,255,255,0.1)" },
           title: {
             display: true,
             text: "← Left  |  Right →",
-            color: "#8892a4",
+            color: "#6b7180",
             font: { size: 10 },
             padding: { top: 4 },
           },
         },
         y: {
           min: -1.1, max: 1.1,
-          grid: { color: "rgba(255,255,255,0.07)" },
-          ticks: { color: "#8892a4", font: { size: 9 }, maxTicksLimit: 5 },
-          border: { color: "rgba(255,255,255,0.15)" },
+          grid: { color: "rgba(255,255,255,0.06)" },
+          ticks: { color: "#6b7180", font: { size: 9 }, maxTicksLimit: 5 },
+          border: { color: "rgba(255,255,255,0.1)" },
           title: {
             display: true,
             text: "↓ Negative  |  Positive ↑",
-            color: "#8892a4",
+            color: "#6b7180",
             font: { size: 10 },
             padding: { bottom: 4 },
           },
@@ -193,7 +193,7 @@ function renderChart(currentArticle, relatedArticles) {
       },
       plugins: {
         legend: {
-          labels: { color: "#8892a4", font: { size: 10 }, boxWidth: 8 },
+          labels: { color: "#8a90a0", font: { size: 10 }, boxWidth: 8 },
         },
         tooltip: {
           callbacks: {
@@ -204,10 +204,10 @@ function renderChart(currentArticle, relatedArticles) {
               return `${t}${src}`;
             },
           },
-          backgroundColor: "#1a1d26",
-          titleColor: "#e2e8f0",
-          bodyColor: "#8892a4",
-          borderColor: "#2a2d3a",
+          backgroundColor: "#0f1116",
+          titleColor: "#eceae4",
+          bodyColor: "#8a90a0",
+          borderColor: "rgba(255,255,255,.08)",
           borderWidth: 1,
         },
       },
@@ -218,6 +218,12 @@ function renderChart(currentArticle, relatedArticles) {
 // ═══════════════════════════════════════════════════════════════
 //  Render: case diagnosis
 // ═══════════════════════════════════════════════════════════════
+
+const TONE_COLORS = {
+  blue:  { text: "#6ea8ff", bg: "rgba(110,168,255,0.12)", border: "rgba(110,168,255,0.18)" },
+  teal:  { text: "#5ed6b0", bg: "rgba(94,214,176,0.12)",  border: "rgba(94,214,176,0.18)" },
+  amber: { text: "#F2A93B", bg: "rgba(242,169,59,0.14)",  border: "rgba(242,169,59,0.22)" },
+};
 
 const CASE_CONFIG = {
   echo_chamber: {
@@ -230,6 +236,7 @@ const CASE_CONFIG = {
     </svg>`,
     title: "Echo Chamber",
     desc:  "Most coverage shares the same political leaning and emotional tone as this article.",
+    tone:  "amber",
   },
   contradiction: {
     icon: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -238,6 +245,7 @@ const CASE_CONFIG = {
     </svg>`,
     title: "Contradiction",
     desc:  "Coverage is highly polarized — strong opposing perspectives exist on both sides.",
+    tone:  "amber",
   },
   internal_split: {
     icon: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -247,6 +255,7 @@ const CASE_CONFIG = {
     </svg>`,
     title: "Internal Split",
     desc:  "The same political side has significantly different emotional takes on this story.",
+    tone:  "blue",
   },
   balanced: {
     icon: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -257,6 +266,7 @@ const CASE_CONFIG = {
     </svg>`,
     title: "Balanced",
     desc:  "Coverage appears relatively even across different political perspectives.",
+    tone:  "teal",
   },
 };
 
@@ -265,6 +275,12 @@ function renderCase(caseLabel) {
   $("case-icon").innerHTML = cfg.icon;
   $("case-title").textContent = cfg.title;
   $("case-desc").textContent  = cfg.desc;
+
+  const tone = TONE_COLORS[cfg.tone] || TONE_COLORS.blue;
+  const card = $("case-card");
+  card.style.setProperty("--tone-color", tone.text);
+  card.style.setProperty("--tone-bg", tone.bg);
+  card.style.setProperty("--tone-border", tone.border);
 }
 
 // ═══════════════════════════════════════════════════════════════
