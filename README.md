@@ -1,51 +1,32 @@
 ---
 title: UnBlur API
-emoji: 📰
-colorFrom: blue
-colorTo: gray
 sdk: docker
 app_port: 8000
 pinned: false
 ---
 
-# UnBlur — Real-Time Media Bias & Echo Chamber Detector
+# UnBlur: Real-Time Media Bias and Echo Chamber Detector
 
-UnBlur is a browser extension backed by a fine-tuned NLP model that analyzes any news article for clickbait, political leaning, and sentiment — then shows you how the same story is covered across the political spectrum, so you can spot echo chambers before they form.
+UnBlur is a browser extension backed by a fine-tuned NLP model. It reads a news article, scores it for clickbait, political leaning, and sentiment, then pulls related coverage from across the political spectrum and shows you where each version of the story sits. The goal is to make an echo chamber visible while you're still in it.
 
-**Live API:** https://kushal0532-unblur.hf.space ([health](https://kushal0532-unblur.hf.space/health)) — hosted on Hugging Face Spaces (Docker SDK), Redis cache (Upstash), model loaded from a private HF Hub repo. The extension ships pointed at this URL by default; see [Environment Variables](#environment-variables) to run against a local backend instead.
-
----
-
-## Table of Contents
-
-1. [What It Does](#what-it-does)
-2. [Architecture Overview](#architecture-overview)
-3. [ML Pipeline](#ml-pipeline)
-4. [MLOps & Evaluation](#mlops--evaluation)
-5. [Infrastructure & Optimization Decisions](#infrastructure--optimization-decisions)
-6. [Project Structure](#project-structure)
-7. [Setup](#setup)
-8. [API Reference](#api-reference)
-9. [Extension Usage](#extension-usage)
-10. [Environment Variables](#environment-variables)
-11. [Tech Stack](#tech-stack)
+**Live API:** https://kushal0532-unblur.hf.space ([health](https://kushal0532-unblur.hf.space/health)). Hosted on Hugging Face Spaces (Docker SDK), with an Upstash Redis cache and the model loaded from a private HF Hub repo. The extension ships pointed at this URL. See [Environment Variables](#environment-variables) if you want to run it against a local backend.
 
 ---
 
 ## What It Does
 
-When you click the UnBlur icon on any news article, the extension:
+When you click the UnBlur icon on a news article, the extension:
 
 1. Extracts the article title and body from the DOM
-2. Sends it to the local FastAPI backend
+2. Sends it to the FastAPI backend
 3. Runs the article through a fine-tuned **ModernBERT** model with three task-specific heads
-4. Fetches 10 related articles from **Google News RSS** (or NewsAPI) and scores them all
-5. Classifies the media landscape as one of four cases (Echo Chamber / Contradiction / Internal Split / Balanced)
-6. Renders an interactive sidebar with:
-   - **Clickbait score** — 0–100% bar (green → red gradient)
-   - **Bias map** — 2D scatter chart (political × sentiment) showing where every article sits
-   - **Case diagnosis** — icon + description of the media landscape
-   - **Summary** — dominant leaning stats and links to the most opposing perspectives
+4. Fetches 10 related articles from **Google News RSS** (or NewsAPI) and scores them the same way
+5. Classifies the media landscape as one of four cases: Echo Chamber, Contradiction, Internal Split, or Balanced
+6. Renders a sidebar with:
+   - **Clickbait score**, a 0-100% bar (green to red gradient)
+   - **Bias map**, a 2D scatter chart (political x sentiment) plotting every article
+   - **Case diagnosis**, an icon and description of the landscape
+   - **Summary**, the dominant leaning stats and links to the most opposing perspectives
 
 ---
 
@@ -102,7 +83,7 @@ When you click the UnBlur icon on any news article, the extension:
                          └────────────────────────────────────────┘
 ```
 
-### Request flow — analyze
+### Request flow: analyze
 
 ```
 Extension icon click
@@ -148,39 +129,39 @@ Input text  ──►  ModernBERT-base backbone  ──►  [CLS] token embeddin
 ```
 
 **Why ModernBERT?**
-ModernBERT-base uses alternating local/global attention, RoPE positional embeddings, and a 512-token efficient context — giving BERT-level text understanding with 2–3× faster inference than standard BERT on CPU. It was released by Answer.AI in late 2024 and outperforms DeBERTa-v3-base on most classification benchmarks while being lighter.
+ModernBERT-base uses alternating local/global attention, RoPE positional embeddings, and a 512-token efficient context. That gives BERT-level text understanding at roughly 2-3x the CPU inference speed of standard BERT. Answer.AI released it in late 2024; it beats DeBERTa-v3-base on most classification benchmarks and is lighter.
 
 **Why multi-task?**
-Training all three heads jointly over a shared backbone forces the encoder to learn representations that capture both political framing *and* sensationalism simultaneously. This improves generalization vs. three separate models and reduces memory footprint at inference time (one backbone, not three).
+Training all three heads over a shared backbone forces the encoder to represent political framing and sensationalism at the same time. In practice this generalizes better than three separate models and uses less memory at inference, since there is one backbone instead of three.
 
-**Output → score mapping:**
+**Output to score mapping:**
 | Head | Raw output | Mapped score |
 |------|------------|--------------|
 | clickbait | P(class=1) | × 100 → 0–100% |
 | leaning | weighted avg | −1×P(left) + 0×P(center) + 1×P(right) → [−1, +1] |
 | sentiment | weighted avg | −1×P(neg) + 0×P(neu) + 1×P(pos) → [−1, +1] |
 
-The weighted average for leaning/sentiment preserves ordinality (left < center < right) and produces a continuous score rather than a hard category, enabling the 2D scatter chart.
+The weighted average for leaning and sentiment keeps the ordering (left < center < right) and produces a continuous score instead of a hard category, which is what the 2D scatter chart needs.
 
 ### Training
 
-The Colab notebook at `model/UnblurNews_Training.ipynb` handles the full training loop:
+The Colab notebook at `model/UnblurNews_Training.ipynb` runs the full training loop:
 
-1. **Clickbait** — `christophsonntag/clickbait` (~32k headlines)
-2. **Political leaning** — `cajcodes/political-news-dataset` (with 4-source fallback chain)
-3. **Sentiment** — `cardiffnlp/tweet_eval` sentiment subset (~45k)
+1. **Clickbait**: `christophsonntag/clickbait` (~32k headlines)
+2. **Political leaning**: `cajcodes/political-news-dataset` (with a 4-source fallback chain)
+3. **Sentiment**: `cardiffnlp/tweet_eval` sentiment subset (~45k)
 
 Training strategy:
-- Phase 1: each head trained independently for 3 epochs (prevents early interference between tasks)
-- Phase 2: all heads fine-tuned jointly for 2 epochs (multi-task alignment)
-- Mixed-precision (fp16) throughout for ~40% memory reduction on T4 GPU
-- AdamW with linear warmup + cosine decay schedule
+- Phase 1: each head trained independently for 3 epochs, so the tasks don't interfere early on
+- Phase 2: all heads fine-tuned jointly for 2 epochs for multi-task alignment
+- Mixed-precision (fp16) throughout, roughly 40% less memory on a T4 GPU
+- AdamW with linear warmup and cosine decay
 
-Exports: HuggingFace backbone dir + `task_heads.pt` + `model_full.pt` + tokenizer → zipped for download.
+Exports: HuggingFace backbone dir, `task_heads.pt`, `model_full.pt`, and the tokenizer, zipped for download.
 
 ### Model Loading (backend)
 
-`analyzer.py` supports two formats transparently:
+`analyzer.py` handles two formats:
 
 ```
 backend/models/
@@ -191,18 +172,18 @@ backend/models/
 └── model_full.pt         ← full checkpoint (backbone + heads, from training)
 ```
 
-The loader tries Format 1 (HF + heads) first, falls back to Format 2 (full .pt) if no `config.json`. This lets you use the training checkpoint directly without a conversion step.
+The loader tries Format 1 (HF + heads) first and falls back to Format 2 (full .pt) when there's no `config.json`. That means the training checkpoint works directly, with no conversion step.
 
 **Why safetensors?**
-`.safetensors` cannot execute arbitrary Python code during deserialization — unlike `.pt` (pickle-based). For any model weights you distribute or receive, this is a meaningful security improvement.
+A `.safetensors` file cannot execute Python code while it deserializes, which a pickle-based `.pt` file can. For weights you distribute or download, that removes a real attack path.
 
 ---
 
-## MLOps & Evaluation
+## MLOps and Evaluation
 
 ### Offline Evaluation (`backend/evaluate.py`)
 
-Run after every model update to catch regressions before deploying:
+Run this after every model update to catch regressions before they ship:
 
 ```bash
 python backend/evaluate.py
@@ -215,18 +196,18 @@ The harness runs 30 hand-labelled test articles through all three heads and repo
 | Metric | What it tells you |
 |--------|------------------|
 | **Accuracy** | Fraction of examples classified correctly |
-| **Macro F1** | Per-class F1 averaged equally — robust to class imbalance |
-| **Confusion matrix** | Which specific errors the model makes (e.g. left↔center confusion) |
-| **Inference latency** | avg + p95 ms per example (catches regressions from model size changes) |
+| **Macro F1** | Per-class F1 averaged equally, robust to class imbalance |
+| **Confusion matrix** | Which errors the model makes (e.g. left/center confusion) |
+| **Inference latency** | avg and p95 ms per example, catches regressions from model size changes |
 
-Results are saved to `evaluation_results.json` for version tracking. Check this file into git alongside model checkpoints to maintain a paper trail of model performance over time.
+Results go to `evaluation_results.json` for version tracking. Check that file into git alongside model checkpoints to keep a record of model performance over time.
 
-**Why Macro F1 over accuracy?**
-The test set intentionally has more center-leaning and negative-sentiment examples (reflecting real-world news distribution). Macro F1 gives equal weight to rare classes (e.g. "clickbait") so a model that predicts "not clickbait" for everything cannot score well.
+**Why Macro F1 instead of accuracy?**
+The test set has more center-leaning and negative-sentiment examples on purpose, since that reflects the real news distribution. Macro F1 weights rare classes (like "clickbait") equally, so a model that always predicts "not clickbait" still scores badly.
 
-### Runtime Metrics (`backend/metrics.py` + `GET /metrics`)
+### Runtime Metrics (`backend/metrics.py` and `GET /metrics`)
 
-Every API request is timed by the FastAPI middleware and stored in a local SQLite database (`cache/unblur_metrics.db`). Hit `/metrics` to get:
+FastAPI middleware times every request and stores it in a local SQLite database (`cache/unblur_metrics.db`). Hit `/metrics` for:
 
 ```json
 {
@@ -253,82 +234,82 @@ Every API request is timed by the FastAPI middleware and stored in a local SQLit
 ```
 
 **Why track prediction distributions?**
-Distribution shift is one of the earliest signals of model drift. If the `political_distribution` bucket for "right" suddenly spikes from 15% to 45%, it likely means the news source mix in Google News changed, not that the world became more conservative overnight. Tracking this lets you trigger a re-evaluation before users notice degraded results.
+Distribution shift is one of the earliest signs of model drift. If the "right" bucket in `political_distribution` jumps from 15% to 45%, the likely cause is a change in the Google News source mix, not the world turning conservative overnight. Watching this lets you re-evaluate before users notice worse results.
 
-**Why SQLite over Prometheus?**
-For a single-instance service, SQLite is zero-dependency, zero-config, and the data lives in the same place as the cache. The `/metrics` JSON schema mirrors what Prometheus expects (counters, histograms), so migrating to a Prometheus exporter when you scale horizontally is a ~1-day task.
+**Why SQLite instead of Prometheus?**
+For a single-instance service, SQLite is zero-dependency, zero-config, and the data sits next to the cache. The `/metrics` JSON matches what Prometheus expects (counters, histograms), so swapping in a Prometheus exporter once you scale horizontally is about a day of work.
 
 ---
 
-## Infrastructure & Optimization Decisions
+## Infrastructure and Optimization Decisions
 
-### 1. Redis Cache (SQLite fallback), 24-hour TTL
+### 1. Redis cache (SQLite fallback), 24-hour TTL
 
-**What:** Every `/analyze` result is stored keyed by URL hash (SHA-256). Every `/related` result is stored keyed by `{topic}|{political_score}|{sentiment_score}`. `cache.get_cache()` returns `RedisArticleCache` if `REDIS_URL` is set (production, Upstash), otherwise `ArticleCache` (SQLite, local dev) — same interface, same TTL, same key scheme.
+**What:** Every `/analyze` result is stored keyed by URL hash (SHA-256). Every `/related` result is keyed by `{topic}|{political_score}|{sentiment_score}`. `cache.get_cache()` returns `RedisArticleCache` when `REDIS_URL` is set (production, Upstash), otherwise `ArticleCache` (SQLite, local dev). Same interface, same TTL, same key scheme.
 
-**Why:** The most expensive operation is running `ModernBERT` inference for 10+ articles in `/related`. For popular articles (e.g. a breaking news story), the first user pays ~2 seconds; every subsequent user pays ~5 ms. Redis gives shared cache across HF Space restarts/replicas; SQLite is zero-dependency for local single-instance dev.
+**Why:** The expensive step is running ModernBERT inference for 10+ articles in `/related`. For a popular story the first user waits about 2 seconds; everyone after that waits about 5 ms. Redis gives a shared cache across HF Space restarts and replicas; SQLite keeps local dev dependency-free.
 
-**Trade-off:** 24h TTL means stale coverage data for very long-lived stories. Tunable via `TTL_SECONDS` in `cache.py`.
+**Trade-off:** A 24h TTL means stale coverage data for very long-lived stories. Tune it with `TTL_SECONDS` in `cache.py`.
 
-### 2. Singleton Model (no per-request loading)
+### 2. Singleton model (no per-request loading)
 
-**What:** `UnBlurAnalyzer.get_instance()` loads the model exactly once at FastAPI startup and holds it in memory for the process lifetime.
+**What:** `UnBlurAnalyzer.get_instance()` loads the model once at FastAPI startup and keeps it in memory for the process lifetime.
 
-**Why:** Loading ModernBERT from disk takes ~2–4 seconds. Per-request loading would make every cache miss unbearably slow. The singleton pattern is safe here because PyTorch's `torch.no_grad()` inference is read-only — the weights are never mutated.
+**Why:** Loading ModernBERT from disk takes 2-4 seconds. Loading per request would make every cache miss painfully slow. The singleton is safe here because `torch.no_grad()` inference is read-only and never mutates the weights.
 
-### 3. Relevance Filter Before Scoring
+### 3. Relevance filter before scoring
 
-**What:** `news_fetcher._is_relevant()` drops articles whose title+snippet share no keywords with the search query, before the expensive model scoring step.
+**What:** `news_fetcher._is_relevant()` drops articles whose title and snippet share no keywords with the search query, before the model scores them.
 
-**Why:** Google News RSS and NewsAPI occasionally return tangentially related results (e.g. a story about "OpenAI funding" returning articles about "funding" in general). Filtering early means we score fewer articles and the downstream 2D-distance sort is more meaningful.
+**Why:** Google News RSS and NewsAPI sometimes return loosely related results (a search for "OpenAI funding" returning articles about "funding" generally). Filtering early means fewer articles to score and a more meaningful 2D-distance sort afterward.
 
-### 4. 2D Euclidean Distance Ranking
+### 4. 2D Euclidean distance ranking
 
-**What:** Related articles are sorted by `sqrt((Δpolitical)² + (Δsentiment)²)` from the current article's position — most different perspective shown first.
+**What:** Related articles are sorted by `sqrt((Δpolitical)² + (Δsentiment)²)` from the current article's position, most different perspective first.
 
-**Why:** This directly operationalizes the concept of "opposing viewpoint". Sorting by relevancy alone (NewsAPI default) would show you the most similar coverage, defeating the purpose of the extension.
+**Why:** That is a concrete definition of "opposing viewpoint". Sorting by relevance alone (the NewsAPI default) surfaces the most similar coverage, which is the opposite of what the extension is for.
 
-### 5. Mixed-Precision Training (fp16)
+### 5. Mixed-precision training (fp16)
 
-**What:** The Colab training notebook uses `torch.cuda.amp.autocast()` + `GradScaler`.
+**What:** The Colab training notebook uses `torch.cuda.amp.autocast()` and `GradScaler`.
 
-**Why:** On a T4 GPU, fp16 training cuts memory usage by ~40% and training time by ~30% with no meaningful accuracy loss (the scaler handles underflow automatically). This lets you fit a full batch on a free-tier Colab GPU.
+**Why:** On a T4 GPU, fp16 training cuts memory use by about 40% and training time by about 30%, with no meaningful accuracy loss (the scaler handles underflow). That lets a full batch fit on a free-tier Colab GPU.
 
-### 6. Safetensors for Weight Persistence
+### 6. Safetensors for weight persistence
 
-**What:** The HuggingFace backbone is saved with `model.save_pretrained()` which writes `model.safetensors` instead of a pickle `.pt` file.
+**What:** The HuggingFace backbone is saved with `model.save_pretrained()`, which writes `model.safetensors` rather than a pickle `.pt`.
 
-**Why:** Pickle files can execute arbitrary code during deserialization — a known supply-chain attack vector for ML models. `safetensors` is a zero-copy, memory-mapped format with no code execution path.
+**Why:** Pickle files can execute code during deserialization, a known supply-chain vector for ML models. `safetensors` is a zero-copy, memory-mapped format with no code execution path.
 
-### 7. Chunked Tokenization (512-token max)
+### 7. Chunked tokenization (512-token max)
 
 **What:** `analyzer.py` encodes `"title [SEP] body"` with `truncation=True, max_length=512`.
 
-**Why:** ModernBERT supports up to 8192 tokens, but news articles rarely need more than 512 for bias/sentiment classification. Capping at 512 keeps inference at ~80–200 ms on CPU; using 8192 would push it to several seconds. The `[SEP]` delimiter helps the model distinguish title framing (higher signal for clickbait/leaning) from body text.
+**Why:** ModernBERT supports up to 8192 tokens, but news articles rarely need more than 512 for bias and sentiment classification. Capping at 512 keeps inference at 80-200 ms on CPU; 8192 would push it to several seconds. The `[SEP]` delimiter helps the model separate title framing (a strong signal for clickbait and leaning) from body text.
 
-### 8. Graceful Degradation
+### 8. Graceful degradation
 
-**What:** If the model fails to load (missing files, OOM, corrupted weights), the API returns `503` with a human-readable error instead of crashing. `model_loaded=False` is visible in `/health`.
+**What:** If the model fails to load (missing files, OOM, corrupted weights), the API returns `503` with a readable error instead of crashing. `/health` reports `model_loaded=False`.
 
-**Why:** The extension is still useful for news discovery even without bias scoring. A crash would give the user a blank sidebar with no explanation.
+**Why:** The extension is still useful for news discovery without bias scoring. A crash would leave the user with a blank sidebar and no explanation.
 
-### 9. Non-Root Docker User
+### 9. Non-root Docker user
 
 **What:** The Dockerfile creates a `unblur` user (UID 1001) and drops privileges before starting uvicorn.
 
-**Why:** If an attacker exploited a deserialization bug in a model checkpoint or an RCE in a dependency, running as root inside the container would give them full control of the host (via mounted volumes). Running as an unprivileged user limits the blast radius to the `/app` directory.
+**Why:** If an attacker exploited a deserialization bug in a checkpoint or an RCE in a dependency, running as root in the container would hand them the host through mounted volumes. An unprivileged user limits the damage to `/app`.
 
-### 10. WAL Mode for SQLite
+### 10. WAL mode for SQLite
 
-**What:** `metrics.py` sets `PRAGMA journal_mode=WAL` when initializing the metrics database.
+**What:** `metrics.py` sets `PRAGMA journal_mode=WAL` when it initializes the metrics database.
 
-**Why:** WAL (Write-Ahead Logging) allows concurrent readers and a single writer without blocking each other. The default rollback-journal mode would cause read requests to block while the middleware writes a latency record — adding measurable overhead on every request.
+**Why:** WAL lets concurrent readers and a single writer proceed without blocking each other. The default rollback-journal mode would block read requests while the middleware writes a latency record, adding overhead to every request.
 
 ---
 
 ## Project Structure
 
-Repo root doubles as the Hugging Face Space (this README's YAML frontmatter is the Space card; `Dockerfile` at root is what Spaces builds).
+The repo root doubles as the Hugging Face Space: this README's YAML frontmatter is the Space card, and the root `Dockerfile` is what Spaces builds.
 
 ```
 .
@@ -393,7 +374,7 @@ model/
 
 ## Setup
 
-### Option A — Local (venv)
+### Option A: local (venv)
 
 ```bash
 # From repo root
@@ -420,7 +401,7 @@ cp .env.example .env
 uvicorn backend.main:app --reload --port 8000
 ```
 
-### Option B — Docker
+### Option B: Docker
 
 ```bash
 # From repo root
@@ -430,27 +411,27 @@ docker compose up --build
 # API available at http://localhost:8000
 ```
 
-### Option C — Hugging Face Spaces (production)
+### Option C: Hugging Face Spaces (production)
 
-The repo root is a Docker-SDK HF Space (this README's frontmatter is the Space card, root `Dockerfile` is what it builds). To deploy your own:
+The repo root is a Docker-SDK HF Space (this README's frontmatter is the Space card, the root `Dockerfile` is what it builds). To deploy your own:
 1. Push this repo to a new HF Space (Docker SDK, matching `app_port: 8000` above)
 2. Set secrets in the Space's **Settings → Repository secrets**: `REDIS_URL`, `MODEL_REPO_ID` + `HF_TOKEN` (or bake model files into the image), `NEWSAPI_KEY`, `OPENAI_API_KEY`
-3. Spaces builds and starts the container automatically on push; check `/health` once live
+3. Spaces builds and starts the container automatically on push; check `/health` once it's live
 
 ### Getting Model Files
 
-**Option 1 — Train your own (recommended for best accuracy)**
+**Option 1: train your own (best accuracy)**
 
 Open `model/UnblurNews_Training.ipynb` in Google Colab (T4 GPU, ~2–4 hours):
-1. Run all cells top-to-bottom
+1. Run all cells top to bottom
 2. The final cell downloads `UnBlur_model.zip`
 3. Unzip into `UnBlur/backend/models/`
 
-**Option 2 — Use the pre-trained checkpoint**
+**Option 2: use the pre-trained checkpoint**
 
 If `backend/models/` already contains `model.safetensors`, `task_heads.pt`, and `tokenizer.json`, you're ready to go.
 
-**Option 3 — Export from existing training checkpoint**
+**Option 3: export from an existing training checkpoint**
 
 ```bash
 # From project root (UnblurNews/)
@@ -546,7 +527,7 @@ curl http://localhost:8000/metrics | python3 -m json.tool
 
 ### `GET /health`
 
-Liveness + readiness probe.
+Liveness and readiness probe.
 
 ```json
 {
@@ -559,18 +540,18 @@ Liveness + readiness probe.
 }
 ```
 
-`cache_backend` is `"redis"` when `REDIS_URL` is set, else `"sqlite"` (in which case `cache_db_bytes` reports the SQLite file size — always `0` for Redis, size isn't tracked there).
+`cache_backend` is `"redis"` when `REDIS_URL` is set, otherwise `"sqlite"` (in which case `cache_db_bytes` reports the SQLite file size; it's always `0` for Redis, since size isn't tracked there).
 
 ---
 
 ## Extension Usage
 
-1. Navigate to any news article
+1. Navigate to a news article
 2. Click the **UnBlur** icon in the browser toolbar
 3. The sidebar slides in from the right (article content shifts left)
-4. Results appear in ~1–3 seconds (< 100 ms on cache hit)
+4. Results appear in ~1–3 seconds (< 100 ms on a cache hit)
 
-**Settings:** Right-click the icon → **Options** to set a custom backend URL. Ships pointed at the live HF Space (`https://kushal0532-unblur.hf.space`) — point it at `http://localhost:8000` here if running the backend locally.
+**Settings:** Right-click the icon → **Options** to set a custom backend URL. It ships pointed at the live HF Space (`https://kushal0532-unblur.hf.space`); point it at `http://localhost:8000` if you're running the backend locally.
 
 ---
 
@@ -588,7 +569,7 @@ Liveness + readiness probe.
 | `METRICS_DB` | No | `./cache/unblur_metrics.db` | SQLite metrics database path |
 | `PORT` | No | `8000` | Server port |
 
-*NewsAPI is optional — Google News RSS works without any key.
+*NewsAPI is optional. Google News RSS works without any key.
 
 ---
 
