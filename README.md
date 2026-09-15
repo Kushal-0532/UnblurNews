@@ -1,5 +1,7 @@
 # UnBlur: Real-Time Media Bias and Echo Chamber Detector
 
+[![CI](https://github.com/Kushal-0532/UnblurNews/actions/workflows/ci.yml/badge.svg)](https://github.com/Kushal-0532/UnblurNews/actions/workflows/ci.yml) [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kushal-0532/UnblurNews/badges/coverage.json)](https://github.com/Kushal-0532/UnblurNews/actions/workflows/ci.yml)
+
 UnBlur is a browser extension backed by a fine-tuned NLP model. It reads a news article, scores it for clickbait, political leaning, and sentiment, then pulls related coverage from across the political spectrum and shows you where each version of the story sits. The goal is to make an echo chamber visible while you're still in it.
 
 **Live API:** https://kushal0532-unblur.hf.space ([health](https://kushal0532-unblur.hf.space/health)). Hosted on Hugging Face Spaces (Docker SDK), with an Upstash Redis cache and the model loaded from a private HF Hub repo. The extension ships pointed at this URL. See [Environment Variables](#environment-variables) if you want to run it against a local backend.

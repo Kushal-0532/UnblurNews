@@ -55,3 +55,5 @@ cache/
 specs/
 .claude/
 testbench/results/
+.coverage
+coverage.xml

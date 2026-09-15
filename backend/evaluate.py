@@ -38,7 +38,6 @@ import json
 import os
 import sys
 import time
-from collections import defaultdict
 
 # ─────────────────────────────────────────────────────────────────
 #  Labelled test set

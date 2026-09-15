@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write  # badge step pushes to the `badges` branch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install test deps
+        run: uv sync --only-group dev --locked
+
+      - name: Ruff
+        run: uv run --no-sync ruff check backend tests testbench
+
+      - name: Pytest
+        run: uv run --no-sync pytest --cov=backend --cov-report=term
+
+      # Writes a shields.io endpoint JSON to the orphan `badges` branch; README badge reads it.
+      - name: Publish coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          pct=$(uv run --no-sync coverage report --format=total)
+          if [ "$pct" -ge 80 ]; then color=brightgreen; elif [ "$pct" -ge 60 ]; then color=yellow; else color=red; fi
+          mkdir -p "$RUNNER_TEMP/badges" && cd "$RUNNER_TEMP/badges"
+          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${pct}%\",\"color\":\"${color}\"}" > coverage.json
+          git init -q -b badges
+          git add coverage.json
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com \
+            commit -q -m "coverage ${pct}%"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" badges

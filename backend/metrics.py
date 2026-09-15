@@ -24,7 +24,6 @@ import sqlite3
 import statistics
 import time
 from contextlib import contextmanager
-from typing import Optional
 
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_METRICS_DB = os.getenv(
@@ -246,7 +245,8 @@ def _score_histogram(
 # ── Smoke test ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import json, tempfile
+    import json
+    import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
         m = MetricsStore(os.path.join(tmp, "test_metrics.db"))

@@ -84,7 +84,6 @@ def _summarize_extractive(articles: list[dict]) -> str:
     selected = articles[:3]
     sentences = []
     for art in selected:
-        source = art.get("source") or art.get("url", "")
         title  = art.get("title", "")
         snippet = art.get("snippet", "")
         text = snippet if snippet else title
